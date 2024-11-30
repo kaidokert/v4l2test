@@ -130,7 +130,6 @@ typedef struct _Surface
    int h;
    bool dirty;
    bool haveYUVTextures;
-   bool externalImage;
    int textureCount;
    GLuint textureId[MAX_TEXTURES];
    EGLImageKHR eglImage[MAX_TEXTURES];
@@ -256,8 +255,6 @@ typedef struct _AppCtx
    PlatformCtx *platformCtx;
    EGLCtx egl;
    GLCtx gl;
-   bool haveDmaBufImport;
-   bool haveExternalImage;
 
    int windowWidth;
    int windowHeight;
@@ -875,8 +872,8 @@ static void drawSurface( GLCtx *glCtx, Surface *surface )
    w= surface->w;
    h= surface->h;
 
-   iprintf(6,"drawSurface: surface %p (%d, %d, %d, %d) dirty %d haveYUVTextures %d textureId[0] %d externalImage %d\n",
-           surface, x, y, w, h, surface->dirty, surface->haveYUVTextures, surface->textureId[0], surface->externalImage);
+   iprintf(6,"drawSurface: surface %p (%d, %d, %d, %d) dirty %d haveYUVTextures %d textureId[0] %d\n",
+           surface, x, y, w, h, surface->dirty, surface->haveYUVTextures, surface->textureId[0]);
  
    const float verts[4][2]=
    {
@@ -912,8 +909,6 @@ static void drawSurface( GLCtx *glCtx, Surface *surface )
       }
    }
 
-   if ( (surface->textureId[0] == GL_NONE) || surface->externalImage )
-   {
       for( int i= 0; i < surface->textureCount; ++i )
       {
          if ( surface->textureId[i] == GL_NONE )
@@ -927,21 +922,13 @@ static void drawSurface( GLCtx *glCtx, Surface *surface )
          iprintf(6,"drawSurface: surface %p eglImage[%d] %p\n", surface, i, surface->eglImage[i]);
          if ( surface->eglImage[i] )
          {
-            if ( surface->externalImage )
-            {
-               glCtx->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, surface->eglImage[i]);
-            }
-            else
-            {
-               glCtx->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, surface->eglImage[i]);
-            }
+            glCtx->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, surface->eglImage[i]);
          }
          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
          glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
       }
-   }
 
    glUseProgram(glCtx->progTex);
    glUniform2f(glCtx->locResTex, appCtx->windowWidth, appCtx->windowHeight);
@@ -2576,7 +2563,6 @@ static bool updateFrame( DecCtx *decCtx, Surface *surface )
             }
             if ( (fd0 >= 0) && (fd1 >= 0) )
             {
-               #ifdef GL_OES_EGL_image_external
                int i= 0;
                attr[i++]= EGL_WIDTH;
                attr[i++]= decCtx->videoWidth;
@@ -2622,69 +2608,6 @@ static bool updateFrame( DecCtx *decCtx, Surface *surface )
 
                surface->textureCount= 1;
                surface->haveYUVTextures= false;
-               surface->externalImage= true;
-               #else
-               attr[0]= EGL_WIDTH;
-               attr[1]= decCtx->videoWidth;
-               attr[2]= EGL_HEIGHT;
-               attr[3]= decCtx->videoHeight;
-               attr[4]= EGL_LINUX_DRM_FOURCC_EXT;
-               attr[5]= DRM_FORMAT_R8;
-               attr[6]= EGL_DMA_BUF_PLANE0_FD_EXT;
-               attr[7]= decCtx->currFrameFd;
-               attr[8]= EGL_DMA_BUF_PLANE0_OFFSET_EXT;
-               attr[9]= 0;
-               attr[10]= EGL_DMA_BUF_PLANE0_PITCH_EXT;
-               attr[11]= decCtx->videoBufferWidth;
-               attr[12]= EGL_NONE;
-
-               surface->eglImage[0]= gl->eglCreateImageKHR( egl->eglDisplay,
-                                                       EGL_NO_CONTEXT,
-                                                       EGL_LINUX_DMA_BUF_EXT,
-                                                       (EGLClientBuffer)NULL,
-                                                       attr );
-               if ( surface->eglImage[0] == 0 )
-               {
-                 iprintf(0,"Error: updateFrame: eglCreateImageKHR failed for decoder %d fd %d: errno %X\n", decCtx->decodeIndex, decCtx->currFrameFd, eglGetError());
-               }
-               if ( surface->textureId[0] != GL_NONE )
-               {
-                  glDeleteTextures( 1, &surface->textureId[0] );
-                  surface->textureId[0]= GL_NONE;
-               }
-
-               attr[0]= EGL_WIDTH;
-               attr[1]= decCtx->videoWidth/2;
-               attr[2]= EGL_HEIGHT;
-               attr[3]= decCtx->videoHeight/2;
-               attr[4]= EGL_LINUX_DRM_FOURCC_EXT;
-               attr[5]= DRM_FORMAT_GR88;
-               attr[6]= EGL_DMA_BUF_PLANE0_FD_EXT;
-               attr[7]= decCtx->currFrameFd;
-               attr[8]= EGL_DMA_BUF_PLANE0_OFFSET_EXT;
-               attr[9]= decCtx->videoWidth*decCtx->videoBufferHeight;
-               attr[10]= EGL_DMA_BUF_PLANE0_PITCH_EXT;
-               attr[11]= decCtx->videoBufferWidth;
-               attr[12]= EGL_NONE;
-
-               surface->eglImage[1]= gl->eglCreateImageKHR( egl->eglDisplay,
-                                                       EGL_NO_CONTEXT,
-                                                       EGL_LINUX_DMA_BUF_EXT,
-                                                       (EGLClientBuffer)NULL,
-                                                       attr );
-               if ( surface->eglImage[1] == 0 )
-               {
-                 iprintf(0,"Error: updateFrame: eglCreateImageKHR failed for decoder %d fd %d: errno %X\n", decCtx->decodeIndex, decCtx->currFrameFd, eglGetError());
-               }
-               if ( surface->textureId[1] != GL_NONE )
-               {
-                  glDeleteTextures( 1, &surface->textureId[1] );
-                  surface->textureId[1]= GL_NONE;
-               }
-               surface->textureCount= 2;
-               surface->haveYUVTextures= true;
-               surface->externalImage= false;
-               #endif
             }
          }
 
@@ -3266,26 +3189,23 @@ int main( int argc, const char **argv )
    eglExtensions= eglQueryString( appCtx->egl.eglDisplay, EGL_EXTENSIONS );
    if ( eglExtensions )
    {
-      if ( strstr( eglExtensions, "EGL_EXT_image_dma_buf_import" ) )
+      if ( !strstr( eglExtensions, "EGL_EXT_image_dma_buf_import" ) )
       {
-         appCtx->haveDmaBufImport= true;
+         iprintf(0,"Error: Don't have EGL_EXT_image_dma_buf_import\n");
+         goto exit;
       }
    }
 
    glExtensions= (const char *)glGetString(GL_EXTENSIONS);
    if ( glExtensions )
    {
-      #ifdef GL_OES_EGL_image_external
-      if ( strstr( glExtensions, "GL_OES_EGL_image_external" ) )
+      if ( !strstr( glExtensions, "GL_OES_EGL_image_external" ) )
       {
-         appCtx->haveExternalImage= true;
+         iprintf(0,"Error: Don't have GL_OES_EGL_image_external\n");
+         goto exit;
       }
-      #endif
    }
 
-   iprintf(0,"-----------------------------------------------------------------\n");
-   iprintf(0,"Have dmabuf import: %d\n", appCtx->haveDmaBufImport );
-   iprintf(0,"Have external image: %d\n", appCtx->haveExternalImage );
    iprintf(0,"-----------------------------------------------------------------\n");
 
    s= eglQueryString( appCtx->egl.eglDisplay, EGL_VENDOR );
@@ -3297,11 +3217,6 @@ int main( int argc, const char **argv )
    iprintf(0,"EGL_EXTENSIONS: (%s)\n", eglExtensions);
    iprintf(0,"GL_EXTENSIONS: (%s)\n", glExtensions);
    iprintf(0,"-----------------------------------------------------------------\n");
-
-   if ( !appCtx->haveDmaBufImport )
-   {
-      iprintf(0,"Error: EGL has no dmabuf import support\n");
-   }
 
    if ( !gDeviceName )
    {
