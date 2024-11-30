@@ -2921,6 +2921,8 @@ static void discoverVideoDecoder( void )
 
    memset( &v4l2, 0, sizeof(v4l2) );
 
+   char * pick = 0;
+
    DIR *dir= opendir("/dev");
    if ( dir )
    {
@@ -3010,9 +3012,11 @@ static void discoverVideoDecoder( void )
             {
                goto done_check;
             }
-
-            gDeviceName= strdup(name );
-            iprintf(0,"discover decoder: %s\n", gDeviceName);
+            if(pick) {
+               free(pick);
+            }
+            pick= strdup(name );
+            iprintf(0,"discover decoder: %s\n", pick);
             iprintf(0,"driver (%s) card(%s) bus_info(%s) version %d capabilities %X device_caps %X\n", 
                     caps.driver, caps.card, caps.bus_info, caps.version, caps.capabilities, caps.device_caps );
             if ( v4l2.isMultiPlane )
@@ -3033,7 +3037,8 @@ static void discoverVideoDecoder( void )
                free( v4l2.outputFormats );
             }
             close( fd );
-            break;
+            iprintf(0,"Passed decoder: %s\n\n--===========--\n\n", pick);
+            //break;
 
          done_check:
             if ( fd >= 0 )
@@ -3044,6 +3049,10 @@ static void discoverVideoDecoder( void )
          }
       }
       closedir( dir );
+   }
+   if(pick) {
+      gDeviceName = strdup(pick);
+      free(pick);
    }
 }
 

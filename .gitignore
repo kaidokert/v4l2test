@@ -1,0 +1,15 @@
+autom4te.cache/
+*.log
+configure
+config.status
+cfg/*
+.deps/
+drm/.deps/
+libtool
+Makefile
+aclocal.m4
+drm/.dirstamp
+*.o
+*.Po
+v4l2test
+Makefile.in

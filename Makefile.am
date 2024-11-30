@@ -20,7 +20,7 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 SUBDIRS = 
-AM_CFLAGS= 
+AM_CFLAGS=  -Wno-narrowing -I/usr/include/libdrm
 AM_LDFLAGS=
 
 AM_CXXFLAGS = $(AM_CFLAGS)

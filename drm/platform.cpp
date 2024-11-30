@@ -573,7 +573,7 @@ PlatformCtx* PlatfromInit( void )
    int rc;
    int i, j, k, len;
    uint32_t n;
-   const char *card= "/dev/dri/card0";
+   const char *card= "/dev/dri/card1";
    drmModeConnector *conn= 0;
    drmModePlaneRes *planeRes= 0;
    drmModePlane *plane= 0;
@@ -595,7 +595,7 @@ PlatformCtx* PlatfromInit( void )
       drmVersionPtr drmver= 0;
       pthread_mutex_init( &ctx->mutex, 0 );
       ctx->drmFd= -1;
-      ctx->drmFd= open(card, O_RDWR);
+      ctx->drmFd= open(card, O_RDWR | O_CLOEXEC);
       if ( ctx->drmFd < 0 )
       {
          fprintf(stderr,"Error: PlatformInit: failed to open card (%s)\n", card);
