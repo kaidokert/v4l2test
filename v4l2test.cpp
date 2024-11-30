@@ -100,8 +100,6 @@ typedef struct _GLCtx
    GLint locOffsetColor;
    GLint locMatrixColor;
 
-   bool haveYUVTextures;
-   bool haveYUVShaders;
    GLuint fragTex;
    GLuint vertTex;
    GLuint progTex;
@@ -129,7 +127,6 @@ typedef struct _Surface
    int w;
    int h;
    bool dirty;
-   bool haveYUVTextures;
    int textureCount;
    GLuint textureId[MAX_TEXTURES];
    EGLImageKHR eglImage[MAX_TEXTURES];
@@ -633,45 +630,6 @@ static const char *fragTexture=
   "  gl_FragColor= texture2D(texture, tx);\n"
   "}\n";
 
-static const char *vertTextureYUV=
-  "attribute vec2 pos;\n"
-  "attribute vec2 texcoord;\n"
-  "attribute vec2 texcoorduv;\n"
-  "uniform mat4 u_matrix;\n"
-  "uniform vec2 u_resolution;\n"
-  "varying vec2 tx;\n"
-  "varying vec2 txuv;\n"
-  "void main()\n"
-  "{\n"
-  "  vec4 v1= u_matrix * vec4(pos, 0, 1);\n"
-  "  vec4 v2= v1 / vec4(u_resolution, u_resolution.x, 1);\n"
-  "  vec4 v3= v2 * vec4(2.0, 2.0, 1, 1);\n"
-  "  vec4 v4= v3 - vec4(1.0, 1.0, 0, 0);\n"
-  "  v4.w= 1.0+v4.z;\n"
-  "  gl_Position=  v4 * vec4(1, -1, 1, 1);\n"
-  "  tx= texcoord;\n"
-  "  txuv= texcoorduv;\n"
-  "}\n";
-
-static const char *fragTextureYUV=
-  "#ifdef GL_ES\n"
-  "precision mediump float;\n"
-  "#endif\n"
-  "uniform sampler2D texture;\n"
-  "uniform sampler2D textureuv;\n"
-  "const vec3 cc_r= vec3(1.0, -0.8604, 1.59580);\n"
-  "const vec4 cc_g= vec4(1.0, 0.539815, -0.39173, -0.81290);\n"
-  "const vec3 cc_b= vec3(1.0, -1.071, 2.01700);\n"
-  "varying vec2 tx;\n"
-  "varying vec2 txuv;\n"
-  "void main()\n"
-  "{\n"
-  "   vec4 y_vec= texture2D(texture, tx);\n"
-  "   vec4 c_vec= texture2D(textureuv, txuv);\n"
-  "   vec4 temp_vec= vec4(y_vec.r, 1.0, c_vec.r, c_vec.g);\n"
-  "   gl_FragColor= vec4( dot(cc_r,temp_vec.xyw), dot(cc_g,temp_vec), dot(cc_b,temp_vec.xyz), 1 );\n"
-  "}\n";
-
 static bool initGL( GLCtx *ctx )
 {
    bool result= false;
@@ -758,17 +716,8 @@ static bool initGL( GLCtx *ctx )
    ctx->locMatrixColor= glGetUniformLocation(ctx->progColor, "u_matrix");
 
 
-
-   if ( ctx->haveYUVShaders )
-   {
-      fragSrc= fragTextureYUV;
-      vertSrc= vertTextureYUV;
-   }
-   else
-   {
-      fragSrc= fragTexture;
-      vertSrc= vertTexture;
-   }
+   fragSrc= fragTexture;
+   vertSrc= vertTexture;
 
    ctx->fragTex= glCreateShader( GL_FRAGMENT_SHADER );
    if ( !ctx->fragTex )
@@ -812,11 +761,6 @@ static bool initGL( GLCtx *ctx )
    ctx->locTC= 1;
    glBindAttribLocation(ctx->progTex, ctx->locPosTex, "pos");
    glBindAttribLocation(ctx->progTex, ctx->locTC, "texcoord");
-   if ( ctx->haveYUVShaders )
-   {
-      ctx->locTCUV= 2;
-      glBindAttribLocation(ctx->progTex, ctx->locTCUV, "texcoorduv");
-   }
 
    glLinkProgram(ctx->progTex);
    glGetProgramiv(ctx->progTex, GL_LINK_STATUS, &status);
@@ -830,10 +774,6 @@ static bool initGL( GLCtx *ctx )
    ctx->locResTex= glGetUniformLocation(ctx->progTex,"u_resolution");
    ctx->locMatrixTex= glGetUniformLocation(ctx->progTex,"u_matrix");
    ctx->locTexture= glGetUniformLocation(ctx->progTex,"texture");
-   if ( ctx->haveYUVShaders )
-   {
-      ctx->locTextureUV= glGetUniformLocation(ctx->progTex,"textureuv");
-   }
 
    result= true;
 
@@ -872,8 +812,8 @@ static void drawSurface( GLCtx *glCtx, Surface *surface )
    w= surface->w;
    h= surface->h;
 
-   iprintf(6,"drawSurface: surface %p (%d, %d, %d, %d) dirty %d haveYUVTextures %d textureId[0] %d\n",
-           surface, x, y, w, h, surface->dirty, surface->haveYUVTextures, surface->textureId[0]);
+   iprintf(6,"drawSurface: surface %p (%d, %d, %d, %d) dirty %d textureId[0] %d\n",
+           surface, x, y, w, h, surface->dirty, surface->textureId[0]);
  
    const float verts[4][2]=
    {
@@ -898,16 +838,6 @@ static void drawSurface( GLCtx *glCtx, Surface *surface )
       {0, 0, 1, 0},
       {0, 0, 0, 1}
    };
-
-   if ( glCtx->haveYUVShaders != surface->haveYUVTextures )
-   {
-      termGL( glCtx );
-      glCtx->haveYUVShaders= surface->haveYUVTextures;
-      if ( !initGL( glCtx ) )
-      {
-         iprintf(0,"Error: drawSurface: initGL failed while changing shaders\n");
-      }
-   }
 
       for( int i= 0; i < surface->textureCount; ++i )
       {
@@ -941,21 +871,9 @@ static void drawSurface( GLCtx *glCtx, Surface *surface )
    glVertexAttribPointer(glCtx->locTC, 2, GL_FLOAT, GL_FALSE, 0, uv);
    glEnableVertexAttribArray(glCtx->locPosTex);
    glEnableVertexAttribArray(glCtx->locTC);
-   if ( surface->haveYUVTextures )
-   {
-      glActiveTexture(GL_TEXTURE1); 
-      glBindTexture(GL_TEXTURE_2D, surface->textureId[1]);
-      glUniform1i(glCtx->locTextureUV, 1);
-      glVertexAttribPointer(glCtx->locTCUV, 2, GL_FLOAT, GL_FALSE, 0, uv);
-      glEnableVertexAttribArray(glCtx->locTCUV);
-   }
    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
    glDisableVertexAttribArray(glCtx->locPosTex);
    glDisableVertexAttribArray(glCtx->locTC);
-   if ( surface->haveYUVTextures )
-   {
-      glDisableVertexAttribArray(glCtx->locTCUV);
-   }
 
    glerr= glGetError();
    if ( glerr != GL_NO_ERROR )
@@ -1255,6 +1173,8 @@ static bool getOutputFormats( V4l2Ctx *v4l2 )
    if ( !haveNV12 )
    {
       iprintf(0,"no suport for NV12/NV12M output detected\n");
+   } else {
+      iprintf(0,"suport for NV12/NV12M output detected\n");
    }
 
    result= true;
@@ -2607,7 +2527,6 @@ static bool updateFrame( DecCtx *decCtx, Surface *surface )
                }
 
                surface->textureCount= 1;
-               surface->haveYUVTextures= false;
             }
          }
 
