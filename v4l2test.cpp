@@ -1173,6 +1173,7 @@ static bool getOutputFormats( V4l2Ctx *v4l2 )
    if ( !haveNV12 )
    {
       iprintf(0,"no suport for NV12/NV12M output detected\n");
+      goto exit;
    } else {
       iprintf(0,"suport for NV12/NV12M output detected\n");
    }
@@ -3248,6 +3249,8 @@ int main( int argc, const char **argv )
    if ( !testResult ) goto exit;
 
    usleep( 2000000 );
+
+   goto exit;
 
 
 
