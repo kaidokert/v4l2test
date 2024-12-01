@@ -57,7 +57,7 @@
 
 #define NUM_INPUT_BUFFERS (2)
 #define MIN_INPUT_BUFFERS (1)
-#define NUM_OUTPUT_BUFFERS (6)
+#define NUM_OUTPUT_BUFFERS (8)
 #define MIN_OUTPUT_BUFFERS (3)
 
 #define MAX_TEXTURES (2)
@@ -67,9 +67,9 @@ typedef struct _DecCtx DecCtx;
 
 #define IOCTL ioctl_wrapper
 
-const useconds_t render_loop_sleep = 16000;
-const useconds_t decode_loop_sleep = 8000;
-const useconds_t state_change_wait_sleep = 1000;
+const useconds_t render_loop_sleep = 4000;
+const useconds_t decode_loop_sleep = 2000;
+const useconds_t state_change_wait_sleep = 250;
 
 typedef struct _EGLCtx
 {
@@ -162,7 +162,6 @@ typedef struct _V4l2Ctx
    int v4l2Fd;
    struct v4l2_capability caps;
    uint32_t deviceCaps;
-   bool isMultiPlane;
    int numInputFormats;
    struct v4l2_fmtdesc *inputFormats;
    int numOutputFormats;
@@ -1071,8 +1070,7 @@ static bool getInputFormats( V4l2Ctx *v4l2 )
    int i, rc;
    int32_t bufferType;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE : V4L2_BUF_TYPE_VIDEO_OUTPUT);
-
+   bufferType= V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
    i= 0;
    for( ; ; )
    {
@@ -1127,7 +1125,7 @@ static bool getOutputFormats( V4l2Ctx *v4l2 )
    int32_t bufferType;
    bool haveNV12= false;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE : V4L2_BUF_TYPE_VIDEO_CAPTURE);
+   bufferType= V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 
    i= 0;
    for( ; ; )
@@ -1194,12 +1192,10 @@ static bool setInputFormat( V4l2Ctx *v4l2 )
    int rc;
    int32_t bufferType;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE : V4L2_BUF_TYPE_VIDEO_OUTPUT);
+   bufferType= V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
    memset( &v4l2->fmtIn, 0, sizeof(struct v4l2_format) );
    v4l2->fmtIn.type= bufferType;
-   if ( v4l2->isMultiPlane )
-   {
       v4l2->fmtIn.fmt.pix_mp.pixelformat= v4l2->inputFormat;
       v4l2->fmtIn.fmt.pix_mp.width= v4l2->decCtx->videoWidth;
       v4l2->fmtIn.fmt.pix_mp.height= v4l2->decCtx->videoHeight;
@@ -1207,15 +1203,6 @@ static bool setInputFormat( V4l2Ctx *v4l2 )
       v4l2->fmtIn.fmt.pix_mp.plane_fmt[0].sizeimage= 1024*1024;
       v4l2->fmtIn.fmt.pix_mp.plane_fmt[0].bytesperline= 0;
       v4l2->fmtIn.fmt.pix_mp.field= V4L2_FIELD_NONE;
-   }
-   else
-   {
-      v4l2->fmtIn.fmt.pix.pixelformat= v4l2->inputFormat;
-      v4l2->fmtIn.fmt.pix.width= v4l2->decCtx->videoWidth;
-      v4l2->fmtIn.fmt.pix.height= v4l2->decCtx->videoHeight;
-      v4l2->fmtIn.fmt.pix.sizeimage= 1024*1024;
-      v4l2->fmtIn.fmt.pix.field= V4L2_FIELD_NONE;
-   }
    rc= IOCTL( v4l2->v4l2Fd, VIDIOC_S_FMT, &v4l2->fmtIn );
    if ( rc < 0 )
    {
@@ -1236,7 +1223,7 @@ static bool setOutputFormat( V4l2Ctx *v4l2 )
    int rc;
    int32_t bufferType;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE : V4L2_BUF_TYPE_VIDEO_CAPTURE);
+   bufferType= V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 
    memset( &v4l2->fmtOut, 0, sizeof(struct v4l2_format) );
    v4l2->fmtOut.type= bufferType;
@@ -1248,8 +1235,6 @@ static bool setOutputFormat( V4l2Ctx *v4l2 )
       iprintf(0,"setOutputFormat: failed get format for output: rc %d errno %d\n", rc, errno);
    }
 
-   if ( v4l2->isMultiPlane )
-   {
       int i;
       uint32_t pixelFormat= V4L2_PIX_FMT_NV12;
       for( i= 0; i < v4l2->numOutputFormats; ++i)
@@ -1276,15 +1261,6 @@ static bool setOutputFormat( V4l2Ctx *v4l2 )
       v4l2->fmtOut.fmt.pix_mp.plane_fmt[1].sizeimage= v4l2->decCtx->videoWidth*v4l2->decCtx->videoHeight/2;
       v4l2->fmtOut.fmt.pix_mp.plane_fmt[1].bytesperline= v4l2->decCtx->videoWidth;
       v4l2->fmtOut.fmt.pix_mp.field= V4L2_FIELD_NONE;
-   }
-   else
-   {
-      v4l2->fmtOut.fmt.pix.pixelformat= V4L2_PIX_FMT_NV12;
-      v4l2->fmtOut.fmt.pix.width= v4l2->decCtx->videoWidth;
-      v4l2->fmtOut.fmt.pix.height= v4l2->decCtx->videoHeight;
-      v4l2->fmtOut.fmt.pix.sizeimage= (v4l2->fmtOut.fmt.pix.width*v4l2->fmtOut.fmt.pix.height*3)/2;
-      v4l2->fmtOut.fmt.pix.field= V4L2_FIELD_NONE;
-   }
    rc= IOCTL( v4l2->v4l2Fd, VIDIOC_S_FMT, &v4l2->fmtOut );
    if ( rc < 0 )
    {
@@ -1309,7 +1285,7 @@ static bool setupInputBuffers( V4l2Ctx *v4l2 )
    int32_t bufferType;
    uint32_t memOffset, memLength, memBytesUsed;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE : V4L2_BUF_TYPE_VIDEO_OUTPUT);
+   bufferType= V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
    neededBuffers= NUM_INPUT_BUFFERS;
 
@@ -1361,36 +1337,24 @@ static bool setupInputBuffers( V4l2Ctx *v4l2 )
       bufIn->type= bufferType;
       bufIn->index= i;
       bufIn->memory= V4L2_MEMORY_MMAP;
-      if ( v4l2->isMultiPlane )
-      {
-         memset( v4l2->inBuffers[i].planes, 0, sizeof(struct v4l2_plane)*MAX_PLANES);
-         bufIn->m.planes= v4l2->inBuffers[i].planes;
-         bufIn->length= 3;
-      }
+      memset( v4l2->inBuffers[i].planes, 0, sizeof(struct v4l2_plane)*MAX_PLANES);
+      bufIn->m.planes= v4l2->inBuffers[i].planes;
+      bufIn->length= 3;
       rc= IOCTL( v4l2->v4l2Fd, VIDIOC_QUERYBUF, bufIn );
       if ( rc < 0 )
       {
          iprintf(0,"Error: setupInputBuffers: decoder %d failed to query input buffer %d: rc %d errno %d\n", v4l2->decCtx->decodeIndex, i, rc, errno);
          goto exit;
       }
-      if ( v4l2->isMultiPlane )
+      if ( bufIn->length != 1 )
       {
-         if ( bufIn->length != 1 )
-         {
-            iprintf(0,"setupInputBuffers: decoder %d num planes expected to be 1 for compressed input but is %d\n", v4l2->decCtx->decodeIndex, bufIn->length);
-            goto exit;
-         }
-         v4l2->inBuffers[i].planeCount= 0;
-         memOffset= bufIn->m.planes[0].m.mem_offset;
-         memLength= bufIn->m.planes[0].length;
-         memBytesUsed= bufIn->m.planes[0].bytesused;
+         iprintf(0,"setupInputBuffers: decoder %d num planes expected to be 1 for compressed input but is %d\n", v4l2->decCtx->decodeIndex, bufIn->length);
+         goto exit;
       }
-      else
-      {
-         memOffset= bufIn->m.offset;
-         memLength= bufIn->length;
-         memBytesUsed= bufIn->bytesused;
-      }
+      v4l2->inBuffers[i].planeCount= 0;
+      memOffset= bufIn->m.planes[0].m.mem_offset;
+      memLength= bufIn->m.planes[0].length;
+      memBytesUsed= bufIn->m.planes[0].bytesused;
 
       bufStart= mmap( NULL,
                       memLength,
@@ -1431,7 +1395,7 @@ static void tearDownInputBuffers( V4l2Ctx *v4l2 )
    struct v4l2_requestbuffers reqbuf;
    int32_t bufferType;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE : V4L2_BUF_TYPE_VIDEO_OUTPUT);
+   bufferType= V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 
    if ( v4l2->inBuffers )
    {
@@ -1478,7 +1442,7 @@ static bool setupOutputBuffers( V4l2Ctx *v4l2 )
    void *bufStart;
    int32_t bufferType;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE : V4L2_BUF_TYPE_VIDEO_CAPTURE);
+   bufferType= V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 
    neededBuffers= NUM_OUTPUT_BUFFERS;
    
@@ -1539,66 +1503,40 @@ static bool setupOutputBuffers( V4l2Ctx *v4l2 )
       bufOut->type= bufferType;
       bufOut->index= i;
       bufOut->memory= V4L2_MEMORY_MMAP;
-      if ( v4l2->isMultiPlane )
-      {
-         memset( v4l2->outBuffers[i].planes, 0, sizeof(struct v4l2_plane)*MAX_PLANES);
-         bufOut->m.planes= v4l2->outBuffers[i].planes;
-         bufOut->length= v4l2->fmtOut.fmt.pix_mp.num_planes;
-      }
+      memset( v4l2->outBuffers[i].planes, 0, sizeof(struct v4l2_plane)*MAX_PLANES);
+      bufOut->m.planes= v4l2->outBuffers[i].planes;
+      bufOut->length= v4l2->fmtOut.fmt.pix_mp.num_planes;
       rc= IOCTL( v4l2->v4l2Fd, VIDIOC_QUERYBUF, bufOut );
       if ( rc < 0 )
       {
          iprintf(0,"Error: setupOutputBuffers: decoder %d failed to query input buffer %d: rc %d errno %d\n", v4l2->decCtx->decodeIndex, i, rc, errno);
          goto exit;
       }
-      if ( v4l2->isMultiPlane )
-      {
-         v4l2->outBuffers[i].planeCount= bufOut->length;
-         for( int j= 0; j < v4l2->outBuffers[i].planeCount; ++j )
-         {
-            iprintf(2,"Output buffer: %d\n", i);
-            iprintf(2,"  index: %d bytesUsed %d length %d flags %08x\n",
-                   bufOut->index, bufOut->m.planes[j].bytesused, bufOut->m.planes[j].length, bufOut->flags );
-
-            memset( &expbuf, 0, sizeof(expbuf) );
-            expbuf.type= bufOut->type;
-            expbuf.index= i;
-            expbuf.plane= j;
-            expbuf.flags= O_CLOEXEC;
-            rc= IOCTL( v4l2->v4l2Fd, VIDIOC_EXPBUF, &expbuf );
-            if ( rc < 0 )
-            {
-               iprintf(0,"setupOutputBuffers: decoder %d failed to export v4l2 output buffer %d: plane: %d rc %d errno %d\n", v4l2->decCtx->decodeIndex, i, j, rc, errno);
-            }
-            iprintf(2,"  plane %d index %d export fd %d\n", j, expbuf.index, expbuf.fd );
-
-            v4l2->outBuffers[i].planeInfo[j].fd= expbuf.fd;
-            v4l2->outBuffers[i].planeInfo[j].capacity= bufOut->m.planes[j].length;
-         }
-
-         /* Use fd of first plane to identify buffer */
-         v4l2->outBuffers[i].fd= v4l2->outBuffers[i].planeInfo[0].fd;
-      }
-      else
+      v4l2->outBuffers[i].planeCount= bufOut->length;
+      for( int j= 0; j < v4l2->outBuffers[i].planeCount; ++j )
       {
          iprintf(2,"Output buffer: %d\n", i);
          iprintf(2,"  index: %d bytesUsed %d length %d flags %08x\n",
-                bufOut->index, bufOut->bytesused, bufOut->length, bufOut->flags );
+                  bufOut->index, bufOut->m.planes[j].bytesused, bufOut->m.planes[j].length, bufOut->flags );
 
          memset( &expbuf, 0, sizeof(expbuf) );
          expbuf.type= bufOut->type;
          expbuf.index= i;
+         expbuf.plane= j;
          expbuf.flags= O_CLOEXEC;
          rc= IOCTL( v4l2->v4l2Fd, VIDIOC_EXPBUF, &expbuf );
          if ( rc < 0 )
          {
-            iprintf(0,"setupOutputBuffers: decoder %d failed to export v4l2 output buffer %d: rc %d errno %d\n", v4l2->decCtx->decodeIndex, i, rc, errno);
+            iprintf(0,"setupOutputBuffers: decoder %d failed to export v4l2 output buffer %d: plane: %d rc %d errno %d\n", v4l2->decCtx->decodeIndex, i, j, rc, errno);
          }
-         iprintf(2,"  index %d export fd %d\n", expbuf.index, expbuf.fd );
+         iprintf(2,"  plane %d index %d export fd %d\n", j, expbuf.index, expbuf.fd );
 
-         v4l2->outBuffers[i].fd= expbuf.fd;
-         v4l2->outBuffers[i].capacity= bufOut->length;
+         v4l2->outBuffers[i].planeInfo[j].fd= expbuf.fd;
+         v4l2->outBuffers[i].planeInfo[j].capacity= bufOut->m.planes[j].length;
       }
+
+      /* Use fd of first plane to identify buffer */
+      v4l2->outBuffers[i].fd= v4l2->outBuffers[i].planeInfo[0].fd;
    }
 
    result= true;
@@ -1619,7 +1557,7 @@ static void tearDownOutputBuffers( V4l2Ctx *v4l2 )
    struct v4l2_requestbuffers reqbuf;
    int32_t bufferType;
 
-   bufferType= (v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE : V4L2_BUF_TYPE_VIDEO_CAPTURE);
+   bufferType= V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 
    if ( v4l2->outBuffers )
    {
@@ -1728,7 +1666,9 @@ static bool initV4l2( V4l2Ctx *v4l2 )
    if ( (v4l2->deviceCaps & V4L2_CAP_VIDEO_M2M_MPLANE) && !(v4l2->deviceCaps & V4L2_CAP_VIDEO_M2M) )
    {
       iprintf(2,"device is multiplane\n");
-      v4l2->isMultiPlane= true;
+   } else {
+      iprintf(0,"Error: device is NOT multiplane!!\n");
+      goto exit;
    }
 
    eb.type= V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -1803,21 +1743,15 @@ static int getInputBuffer( V4l2Ctx *v4l2 )
       memset( &buf, 0, sizeof(buf));
       buf.type= v4l2->fmtIn.type;
       buf.memory= V4L2_MEMORY_MMAP;
-      if ( v4l2->isMultiPlane )
-      {
-         memset( planes, 0, sizeof(planes));
-         buf.length= 1;
-         buf.m.planes= planes;
-      }
+      memset( planes, 0, sizeof(planes));
+      buf.length= 1;
+      buf.m.planes= planes;
       rc= IOCTL( v4l2->v4l2Fd, VIDIOC_DQBUF, &buf );
       if ( rc == 0 )
       {
          bufferIndex= buf.index;
-         if ( v4l2->isMultiPlane )
-         {
-            memcpy( v4l2->inBuffers[bufferIndex].buf.m.planes, buf.m.planes, sizeof(struct v4l2_plane)*MAX_PLANES);
-            buf.m.planes= v4l2->inBuffers[bufferIndex].buf.m.planes;
-         }
+         memcpy( v4l2->inBuffers[bufferIndex].buf.m.planes, buf.m.planes, sizeof(struct v4l2_plane)*MAX_PLANES);
+         buf.m.planes= v4l2->inBuffers[bufferIndex].buf.m.planes;
          v4l2->inBuffers[bufferIndex].buf= buf;
          v4l2->inBuffers[bufferIndex].queued= false;
       }
@@ -1840,21 +1774,15 @@ static int getOutputBuffer( V4l2Ctx *v4l2 )
    memset( &buf, 0, sizeof(buf));
    buf.type= v4l2->fmtOut.type;
    buf.memory= V4L2_MEMORY_MMAP;
-   if ( v4l2->isMultiPlane )
-   {
-      memset( planes, 0, sizeof(planes));
-      buf.length= v4l2->outBuffers[0].planeCount;
-      buf.m.planes= planes;
-   }
+   memset( planes, 0, sizeof(planes));
+   buf.length= v4l2->outBuffers[0].planeCount;
+   buf.m.planes= planes;
    rc= IOCTL( v4l2->v4l2Fd, VIDIOC_DQBUF, &buf );
    if ( rc == 0 )
    {
       bufferIndex= buf.index;
-      if ( v4l2->isMultiPlane )
-      {
-         memcpy( v4l2->outBuffers[bufferIndex].buf.m.planes, buf.m.planes, sizeof(struct v4l2_plane)*MAX_PLANES);
-         buf.m.planes= v4l2->outBuffers[bufferIndex].buf.m.planes;
-      }
+      memcpy( v4l2->outBuffers[bufferIndex].buf.m.planes, buf.m.planes, sizeof(struct v4l2_plane)*MAX_PLANES);
+      buf.m.planes= v4l2->outBuffers[bufferIndex].buf.m.planes;
       v4l2->outBuffers[bufferIndex].buf= buf;
    }
 
@@ -1933,12 +1861,9 @@ static void *videoOutputThread( void *arg )
 
    for( i= 0; i < v4l2->numBuffersOut; ++i )
    {
-      if ( v4l2->isMultiPlane )
+      for( j= 0; j < v4l2->outBuffers[i].planeCount; ++j )
       {
-         for( j= 0; j < v4l2->outBuffers[i].planeCount; ++j )
-         {
-            v4l2->outBuffers[i].buf.m.planes[j].bytesused= v4l2->outBuffers[i].buf.m.planes[j].length;
-         }
+         v4l2->outBuffers[i].buf.m.planes[j].bytesused= v4l2->outBuffers[i].buf.m.planes[j].length;
       }
       rc= IOCTL( v4l2->v4l2Fd, VIDIOC_QBUF, &v4l2->outBuffers[i].buf );
       if ( rc < 0 )
@@ -1958,7 +1883,7 @@ static void *videoOutputThread( void *arg )
       goto exit;
    }
 
-   bufferType= v4l2->isMultiPlane ? V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE :V4L2_BUF_TYPE_VIDEO_CAPTURE;
+   bufferType= V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
    memset( &selection, 0, sizeof(selection) );
    selection.type= bufferType;
    selection.target= V4L2_SEL_TGT_COMPOSE_DEFAULT;
@@ -1988,14 +1913,7 @@ static void *videoOutputThread( void *arg )
    {
       decCtx->videoBufferHeight= v4l2->fmtOut.fmt.pix.height;
    }
-   if ( v4l2->isMultiPlane )
-   {
-      decCtx->videoBufferWidth= v4l2->fmtOut.fmt.pix_mp.plane_fmt[0].bytesperline;
-   }
-   else
-   {
-      decCtx->videoBufferWidth= v4l2->fmtOut.fmt.pix.bytesperline;
-   }
+   decCtx->videoBufferWidth= v4l2->fmtOut.fmt.pix_mp.plane_fmt[0].bytesperline;
    iprintf(0,"%lld: decoder %d frame size: %dx%d capture buffer count %d\n", getCurrentTimeMillis(), decCtx->decodeIndex, decCtx->videoWidth, decCtx->videoHeight, decCtx->v4l2.numBuffersOut );
    pthread_mutex_unlock( &decCtx->mutex );
 
@@ -2209,10 +2127,7 @@ static bool playFile( DecCtx *decCtx )
       memcpy( v4l2->inBuffers[buffIndex].start, &stream->streamData[frameOffset], frameLength );
       
       v4l2->inBuffers[buffIndex].buf.bytesused= frameLength;
-      if ( v4l2->isMultiPlane )
-      {
-         v4l2->inBuffers[buffIndex].buf.m.planes[0].bytesused= frameLength;
-      }
+      v4l2->inBuffers[buffIndex].buf.m.planes[0].bytesused= frameLength;
       v4l2->inBuffers[buffIndex].buf.timestamp = {0};
       rc= IOCTL( v4l2->v4l2Fd, VIDIOC_QBUF, &v4l2->inBuffers[buffIndex].buf );
       if ( rc < 0 )
@@ -2471,18 +2386,10 @@ static bool updateFrame( DecCtx *decCtx, Surface *surface )
             iprintf(6,"updateFrame: found index %d for nextFrameFd %d\n", buffIndex, decCtx->nextFrameFd);
             if ( buffIndex >= 0 )
             {
-               if ( v4l2->isMultiPlane )
+               fd0= v4l2->outBuffers[buffIndex].planeInfo[0].fd;
+               fd1= v4l2->outBuffers[buffIndex].planeInfo[1].fd;
+               if ( fd1 == -1 )
                {
-                  fd0= v4l2->outBuffers[buffIndex].planeInfo[0].fd;
-                  fd1= v4l2->outBuffers[buffIndex].planeInfo[1].fd;
-                  if ( fd1 == -1 )
-                  {
-                     fd1= fd0;
-                  }
-               }
-               else
-               {
-                  fd0= v4l2->outBuffers[buffIndex].fd;
                   fd1= fd0;
                }
             }
@@ -2836,7 +2743,7 @@ static void discoverVideoDecoder( void )
             v4l2.v4l2Fd= fd;
             if ( (deviceCaps & V4L2_CAP_VIDEO_M2M_MPLANE) && !(deviceCaps & V4L2_CAP_VIDEO_M2M) )
             {
-               v4l2.isMultiPlane= true;
+               iprintf(0,"This is isMultiPlane thing!!!\n");
             }
 
             getInputFormats( &v4l2 );
@@ -2866,10 +2773,7 @@ static void discoverVideoDecoder( void )
             iprintf(0,"discover decoder: %s\n", pick);
             iprintf(0,"driver (%s) card(%s) bus_info(%s) version %d capabilities %X device_caps %X\n", 
                     caps.driver, caps.card, caps.bus_info, caps.version, caps.capabilities, caps.device_caps );
-            if ( v4l2.isMultiPlane )
-            {
-               iprintf(0,"device is multiplane\n");
-            }
+            iprintf(0,"device is multiplane\n");
             level= gLogLevel;
             if ( gLogLevel == 0) gLogLevel= 1;
             getInputFormats( &v4l2 );
