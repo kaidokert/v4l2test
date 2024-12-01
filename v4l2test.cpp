@@ -67,6 +67,10 @@ typedef struct _DecCtx DecCtx;
 
 #define IOCTL ioctl_wrapper
 
+const useconds_t render_loop_sleep = 16000;
+const useconds_t decode_loop_sleep = 8000;
+const useconds_t state_change_wait_sleep = 1000;
+
 typedef struct _EGLCtx
 {
    AppCtx *appCtx;
@@ -2095,7 +2099,7 @@ static void *videoDecodeThread( void *arg )
 
    while ( decCtx->playing )
    {
-      usleep( 8000 );
+      usleep( decode_loop_sleep );
 
       if ( updateFrame( decCtx, surface ) )
       {
@@ -2237,7 +2241,7 @@ static bool playFile( DecCtx *decCtx )
          for( ; ; )
          {
             if ( decCtx->paused == false ) break;
-            usleep( 1000 );
+            usleep( state_change_wait_sleep );
          }
 
          rc= pthread_create( &v4l2->decCtx->videoOutThreadId, NULL, videoOutputThread, v4l2->decCtx );
@@ -2597,7 +2601,7 @@ static void testDecode( AppCtx *appCtx, int decodeIndex, int numFramesToDecode, 
    for( ; ; )
    {
       if ( decCtx->ready ) break;
-      usleep( 1000 );
+      usleep( state_change_wait_sleep );
    }
 
 exit:
@@ -2646,7 +2650,7 @@ static bool runUntilDone( AppCtx *appCtx )
             running= false;
          }
       }
-      usleep( 1000 );
+      usleep( state_change_wait_sleep );
    }
 
    for( i= 0; i < NUM_DECODE; ++i )
@@ -2662,7 +2666,7 @@ static bool runUntilDone( AppCtx *appCtx )
    running= true;
    while( running )
    {
-      usleep( 16000 );
+      usleep( render_loop_sleep );
 
       glClearColor( 0, 0, 0, 1 );
       glClear( GL_COLOR_BUFFER_BIT );
